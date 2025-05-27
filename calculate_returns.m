@@ -5,10 +5,22 @@ function [returnsTable, info] = calculate_returns(cleanedTable, config)
 %   - Plots return distributions, logs summary stats
 %   - Returns returns table and info struct
 
+% Diagnostic: print first few rows of input
+fprintf('First 5 rows of input to calculate_returns (cleanedTable):\n');
+disp(cleanedTable(1:min(5,height(cleanedTable)),:));
+
+returnsTable = cleanedTable; % Default fallback
+info = struct();
+
+if isempty(cleanedTable) || width(cleanedTable) < 1
+    warning('Input cleanedTable is empty or has no columns.');
+    returnsTable(:,:) = NaN;
+    return;
+end
+
 vars = cleanedTable.Properties.VariableNames;
 timeIndex = cleanedTable.Properties.RowTimes;
 returnsTable = cleanedTable(2:end, :); % Will fill below
-info = struct();
 
 if isfield(config, 'returns') && isfield(config.returns, 'type')
     retType = config.returns.type;
@@ -19,26 +31,53 @@ end
 for i = 1:numel(vars)
     v = vars{i};
     data = cleanedTable.(v);
-    if strcmpi(retType, 'log')
-        ret = diff(log(data));
+    if isnumeric(data)
+        if strcmpi(retType, 'log')
+            ret = diff(log(data));
+        else
+            ret = diff(data);
+        end
+        returnsTable.(v) = ret;
+        % Diagnostics
+        ret_no_nan = ret(~isnan(ret));
+        skewness_val = skewness(ret_no_nan, 0);
+        kurtosis_val = kurtosis(ret_no_nan, 0);
+        mu = mean(ret_no_nan);
+        sigma = std(ret_no_nan);
+        info.(v) = struct('mean', mu, 'std', sigma, 'skew', skewness_val, 'kurtosis', kurtosis_val);
     else
-        ret = diff(data);
+        returnsTable.(v) = NaN(size(data));
     end
-    returnsTable.(v) = ret;
-    % Diagnostics
-    mu = mean(ret, 'omitnan');
-    sigma = std(ret, 'omitnan');
-    skewness_val = skewness(ret, 'omitnan');
-    kurtosis_val = kurtosis(ret, 'omitnan');
-    info.(v) = struct('mean', mu, 'std', sigma, 'skew', skewness_val, 'kurtosis', kurtosis_val);
-    % Plot
-    figure; histogram(ret, 50); title(['Return Distribution: ' v]); xlabel('Return'); ylabel('Count');
-    saveas(gcf, ['EDA_Results/returns_hist_' v '.png']); close;
-    figure; qqplot(ret); title(['QQ Plot: ' v]);
-    saveas(gcf, ['EDA_Results/returns_qq_' v '.png']); close;
-    fprintf('Returns for %s: mean=%.4g, std=%.4g, skew=%.4g, kurt=%.4g\n', v, mu, sigma, skewness_val, kurtosis_val);
 end
 
+% Diagnostic: print first few rows and summary of output
+fprintf('First 5 rows of output from calculate_returns (returnsTable):\n');
+disp(returnsTable(1:min(5,height(returnsTable)),:));
+disp('Summary of returnsTable:');
+disp(summary(returnsTable));
+
+% Warn if all returns are NaN
+if all(all(ismissing(returnsTable)))
+    warning('All returns are NaN after calculation. Check input data and cleaning logic.');
+end
+
+% Diagnostic: print NaN summary after return calculation
+for i = 1:numel(vars)
+    v = vars{i};
+    retData = returnsTable.(v);
+    nanIdx = find(isnan(retData));
+    if ~isempty(nanIdx)
+        fprintf('After return calculation, %s has %d NaNs. Indices (first 10): %s\n', v, numel(nanIdx), mat2str(nanIdx(1:min(10,end))));
+        % Print corresponding timestamps for all NaNs (first 10)
+        if istimetable(returnsTable)
+            nanTimes = string(returnsTable.Properties.RowTimes(nanIdx));
+            fprintf('Timestamps of NaNs in %s (first 10):\n', v);
+            disp(nanTimes(1:min(10,end)))
+        end
+    else
+        fprintf('After return calculation, %s has no NaNs.\n', v);
+    end
+end
 end
 
 % Unit test (example)
@@ -50,4 +89,4 @@ function test_calculate_returns()
     [rets, info] = calculate_returns(T, config);
     assert(height(rets) == 99);
     disp('test_calculate_returns passed');
-end 
+end

@@ -7,6 +7,11 @@ function [cleanedTable, info] = data_cleaning(rawTable, config)
 %   - Plots before/after cleaning, logs diagnostics
 %   - Returns cleaned table and info struct
 
+% Ensure EDA_Results directory exists for saving plots
+if ~exist('EDA_Results', 'dir')
+    mkdir('EDA_Results');
+end
+
 % Extract config options
 if isfield(config, 'cleaning')
     threshold = config.cleaning.outlierThreshold;
@@ -18,6 +23,20 @@ vars = rawTable.Properties.VariableNames;
 timeIndex = rawTable.Properties.RowTimes;
 cleanedTable = rawTable;
 info = struct();
+
+% Diagnostic: Check for missing timestamps in the input timetable
+if istimetable(rawTable)
+    dt = config.resolution;
+    expectedTimes = (rawTable.Properties.RowTimes(1):dt:rawTable.Properties.RowTimes(end))';
+    missingTimes = setdiff(expectedTimes, rawTable.Properties.RowTimes);
+    fprintf('Number of missing timestamps in input data: %d\n', numel(missingTimes));
+    if ~isempty(missingTimes)
+        disp('First 10 missing timestamps:');
+        disp(missingTimes(1:min(10,end)));
+    else
+        disp('No missing timestamps in input data.');
+    end
+end
 
 for i = 1:numel(vars)
     v = vars{i};
@@ -31,10 +50,10 @@ for i = 1:numel(vars)
     % Winsorize outliers
     data(outlierMask & (data > med)) = med + threshold * sigma;
     data(outlierMask & (data < med)) = med - threshold * sigma;
-    % Fill missing
+    % Interpolate missing values (linear, with nearest for ends)
+    data = fillmissing(data, 'linear', 'EndValues', 'nearest');
     nanMask = isnan(data);
     info.(v).missing = find(nanMask);
-    data = fillmissing(data, 'linear', 'EndValues', 'nearest');
     % Store cleaned data
     cleanedTable.(v) = data;
     % Plot before/after
@@ -44,6 +63,18 @@ for i = 1:numel(vars)
     saveas(gcf, ['EDA_Results/cleaning_' v '.png']); close;
     % Log
     fprintf('Cleaned %s: %d outliers, %d missing values\n', v, numel(info.(v).outliers), numel(info.(v).missing));
+    % Diagnostic: print NaN summary after cleaning
+    nanIdx = find(isnan(data));
+    if ~isempty(nanIdx)
+        fprintf('After cleaning, %s has %d NaNs at indices: ', v, numel(nanIdx));
+        if numel(nanIdx) <= 10
+            fprintf('%s\n', mat2str(nanIdx));
+        else
+            fprintf('%s ...\n', mat2str(nanIdx(1:10)));
+        end
+    else
+        fprintf('After cleaning, %s has no NaNs.\n', v);
+    end
 end
 
 % Align to master time index (already assumed in input)
@@ -63,4 +94,4 @@ function test_data_cleaning()
     assert(all(abs(cleaned.TestVar) < 10));
     assert(all(~isnan(cleaned.TestVar)));
     disp('test_data_cleaning passed');
-end 
+end

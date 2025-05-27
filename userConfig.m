@@ -127,3 +127,12 @@ config.validation.jumpDeviationThreshold = 0.5;  % Flag if simulated jump freq d
 
 % Output directory for validation results
 config.validation.outputDir = 'Validation_Results';
+
+% === Regime Detection Parameters ===
+config.regimeDetection = struct();
+config.regimeDetection.nRegimes = 2; % Number of regimes (set to 2, 3, or 'auto')
+config.regimeDetection.method = 'rollingvol'; % Options: 'HMM', 'bayesian', 'rollingVol', etc.
+config.regimeDetection.windowSize = 'auto'; % Rolling window size for volatility regime detection (set to integer or 'auto')
+config.regimeDetection.threshold = 'auto'; % Threshold for regime detection (set to value or 'auto' for automatic selection)
+config.regimeDetection.minDuration = 3; % Minimum duration of regimes in time steps
+config.regimeDetection.info = 'Configure regime detection: nRegimes, method (HMM/bayesian/rollingVol), windowSize, threshold, minDuration.';
