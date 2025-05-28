@@ -10,7 +10,12 @@ load('EDA_Results/returnsTable.mat', 'returnsTable');
 load('EDA_Results/regimeLabels.mat', 'regimeLabels');
 load('EDA_Results/paramResults.mat', 'paramResults');
 
-products = returnsTable.Properties.VariableNames;
+% Handle both table and struct formats
+if istable(returnsTable)
+    products = returnsTable.Properties.VariableNames;
+else
+    products = fieldnames(returnsTable);
+end
 innovationsStruct = struct();
 regimeVolModels = struct();
 for i = 1:numel(products)

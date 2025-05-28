@@ -1,9 +1,17 @@
 function runEDAandPatternExtraction(configFile)
 %RUNEDAANDPATTERNEXTRACTION Run EDA and pattern extraction pipeline for all products.
-%   Loads raw data, cleans, computes returns, detects regimes, saves results for each product.
+%   Loads raw data, cleans, computes returns, detects regimes, saves combined results.
 
 run(configFile); % Loads config
 fields = fieldnames(config.dataFiles);
+
+% Initialize combined structures for all products
+combinedReturnsTable = struct();
+combinedRegimeLabels = struct();
+combinedCleanInfo = struct();
+combinedRetInfo = struct();
+combinedRegimeInfo = struct();
+
 for i = 1:numel(fields)
     product = fields{i};
     fname = config.dataFiles.(product);
@@ -42,7 +50,31 @@ for i = 1:numel(fields)
     disp(summary(returnsTable));
     % Regime detection
     [regimeLabels, regimeInfo] = detect_regimes(returnsTable, config);
-    % Save results per product
+    
+    % Add to combined structures
+    % Store both the returns data and timestamps
+    productVarNames = returnsTable.Properties.VariableNames;
+    if ismember(product, productVarNames)
+        % Product name matches variable name
+        combinedReturnsTable.(product) = returnsTable.(product);
+    elseif ismember('Price', productVarNames)
+        % Common case: variable is named 'Price'
+        combinedReturnsTable.(product) = returnsTable.Price;
+    else
+        % Use the first variable
+        combinedReturnsTable.(product) = returnsTable.(productVarNames{1});
+    end
+    
+    % Store timestamps for each product
+    combinedReturnsTable.([product '_timestamps']) = returnsTable.Timestamp;
+    
+    % Add regime labels and info
+    combinedRegimeLabels.(product) = regimeLabels;
+    combinedCleanInfo.(product) = cleanInfo;
+    combinedRetInfo.(product) = retInfo;
+    combinedRegimeInfo.(product) = regimeInfo;
+    
+    % Still save individual files for debugging/reference
     outdir = 'EDA_Results';
     if ~exist(outdir, 'dir'), mkdir(outdir); end
     save(fullfile(outdir, ['cleanedTable_' product '.mat']), 'cleanedTable');
@@ -52,7 +84,25 @@ for i = 1:numel(fields)
     save(fullfile(outdir, ['retInfo_' product '.mat']), 'retInfo');
     save(fullfile(outdir, ['regimeInfo_' product '.mat']), 'regimeInfo');
 end
-fprintf('Sprint 1 complete: Cleaned data, returns, and regimes saved to EDA_Results for all products.\n');
+
+% Save combined structures that the next workflow modules expect
+fprintf('\nSaving combined results for Sprint 2...\n');
+returnsTable = combinedReturnsTable;
+regimeLabels = combinedRegimeLabels;
+cleanInfo = combinedCleanInfo;
+retInfo = combinedRetInfo;
+regimeInfo = combinedRegimeInfo;
+
+save('EDA_Results/returnsTable.mat', 'returnsTable');
+save('EDA_Results/regimeLabels.mat', 'regimeLabels');
+save('EDA_Results/cleanInfo.mat', 'cleanInfo');
+save('EDA_Results/retInfo.mat', 'retInfo');
+save('EDA_Results/regimeInfo.mat', 'regimeInfo');
+
+fprintf('✅ Sprint 1 complete: Combined results saved for Sprint 2\n');
+fprintf('   - returnsTable.mat: Returns for all products\n');
+fprintf('   - regimeLabels.mat: Regime labels for all products\n');
+fprintf('   - Individual product files also saved for reference\n');
 end
 % runEDAandPatternExtraction.m
 % Orchestrates Sprint 1: Data cleaning, returns calculation, regime detection

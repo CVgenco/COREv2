@@ -1,0 +1,2 @@
+Historical returns kurtosis: 204.3894
+Simulated returns kurtosis: 1.1422

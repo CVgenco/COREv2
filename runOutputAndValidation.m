@@ -9,6 +9,17 @@ if ~exist('config', 'var')
 end
 if ~exist(outputDir, 'dir'), mkdir(outputDir); end
 
+% === Ensure all required data is available ===
+if ~exist('regimeInfo', 'var')
+    if exist('EDA_Results/regimeInfo.mat', 'file')
+        load('EDA_Results/regimeInfo.mat', 'regimeInfo');
+        fprintf('Loaded regimeInfo for validation\n');
+    else
+        warning('regimeInfo not available for validation');
+        regimeInfo = struct();
+    end
+end
+
 % === Load simulated paths and info ===
 if ~exist('simPaths', 'var') || ~exist('productNames', 'var')
     simFile = fullfile(outputDir, 'simulated_paths.mat');
@@ -25,7 +36,17 @@ if ~exist('simPaths', 'var') || ~exist('productNames', 'var')
     end
 end
 if ~exist('alignedTable', 'var')
-    load('alignedTable.mat', 'alignedTable'); % Or load from your data pipeline
+    try
+        load('EDA_Results/alignedTable.mat', 'alignedTable');
+        fprintf('Loaded alignedTable from EDA_Results/alignedTable.mat\n');
+    catch
+        try
+            load('alignedTable.mat', 'alignedTable');
+            fprintf('Loaded alignedTable from current directory\n');
+        catch
+            error('Could not load alignedTable from EDA_Results/ or current directory. Run EDA first.');
+        end
+    end
 end
 
 nPaths = size(simPaths.(productNames{1}), 2);
@@ -306,10 +327,15 @@ for i = 1:numel(productNames)
         % Autocorrelation (e.g., up to lag 50)
         if isempty(simSq) || isempty(histSq)
             warning('Volatility clustering diagnostics skipped for %s: insufficient data.', pname);
-            % Ensure an empty or placeholder file is written if diagnostics are skipped,
-            % so that computeErrorScore doesn't fail on a missing file, but gets Inf.
+            % Create placeholder ACF file to prevent downstream errors
             acfTable = table(NaN(0,1), NaN(0,1), NaN(0,1), 'VariableNames', {'Lag','HistoricalACF','SimulatedACF'});
             writetable(acfTable, fullfile(outputDir, [pname '_volatility_acf.csv']));
+            
+            % Create placeholder kurtosis file
+            fid = fopen(fullfile(outputDir, [pname '_kurtosis.txt']), 'w');
+            fprintf(fid, 'Historical returns kurtosis: NaN\n');
+            fprintf(fid, 'Simulated returns kurtosis: NaN\n');
+            fclose(fid);
         else
             maxLag = 50;
             [simACF, lags] = autocorr(simSq, 'NumLags', maxLag);

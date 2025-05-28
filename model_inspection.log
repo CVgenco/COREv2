@@ -1,0 +1,10 @@
+FULL STRUCTURE DETAILS:
+             nodalPrices: [1x1 struct]
+               hubPrices: [1x1 struct]
+         nodalGeneration: [1x1 struct]
+                   regup: [1x1 struct]
+                 regdown: [1x1 struct]
+                 nonspin: [1x1 struct]
+      hourlyHubForecasts: [1x1 struct]
+    hourlyNodalForecasts: [1x1 struct]
+

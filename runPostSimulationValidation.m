@@ -13,7 +13,7 @@ load('Simulation_Results/regimePaths.mat', 'regimePaths');
 load('Simulation_Results/pathDiagnostics.mat', 'pathDiagnostics');
 load('EDA_Results/returnsTable.mat', 'returnsTable');
 load('EDA_Results/regimeLabels.mat', 'regimeLabels');
-products = fieldnames(simPaths);
+products = fieldnames(returnsTable);
 nProducts = numel(products);
 nPaths = size(simPaths.(products{1}),2);
 
@@ -47,7 +47,7 @@ for i = 1:nProducts
         saveas(gcf, fullfile(outputDir, ['returns_dist_' pname '.png'])); close;
     end
     % Summary stats
-    stats = @(x) [mean(x,'omitnan'), std(x,'omitnan'), skewness(x,'omitnan'), kurtosis(x,'omitnan')];
+    stats = @(x) [mean(x,'omitnan'), std(x,'omitnan'), skewness(x,1), kurtosis(x,1)];
     histStats = stats(histReturns);
     simStats = stats(simReturns(:));
     fprintf('Return stats for %s: Hist [mean=%.3g std=%.3g skew=%.3g kurt=%.3g], Sim [mean=%.3g std=%.3g skew=%.3g kurt=%.3g]\n', ...
@@ -90,12 +90,29 @@ for i = 1:nProducts
     end
     % --- 5. Cross-asset correlations ---
     if config.validation.enableCorrMatrix
-        histMat = nan(length(histReturns), nProducts);
-        simMat = nan(numel(simReturns)/nPaths, nProducts);
+        % Handle potential size differences between historical and simulated data
+        minSize = min(length(histReturns), size(diff(simPaths.(products{1}),1,1), 1));
+        histMat = nan(minSize, nProducts);
+        simReturnsFlat = reshape(diff(simPaths.(products{1}),1,1), [], 1);
+        simMat = nan(length(simReturnsFlat), nProducts);
+        
         for j = 1:nProducts
-            histMat(:,j) = returnsTable.(products{j});
-            simMat(:,j) = reshape(diff(simPaths.(products{j}),1,1), [], 1);
+            % Use only the overlapping portion for historical data
+            histData = returnsTable.(products{j});
+            if length(histData) >= minSize
+                histMat(:,j) = histData(1:minSize);
+            else
+                histMat(1:length(histData),j) = histData;
+            end
+            
+            % Full simulated data
+            simReturnsProduct = diff(simPaths.(products{j}),1,1);
+            simMat(:,j) = reshape(simReturnsProduct, [], 1);
         end
+        histCorr = corr(histMat, 'rows', 'pairwise');
+        simCorr = corr(simMat, 'rows', 'pairwise');
+        figure;
+        subplot(1,2,1); imagesc(histCorr); colorbar; title('Historical Correlation');
         histCorr = corr(histMat, 'rows', 'pairwise');
         simCorr = corr(simMat, 'rows', 'pairwise');
         figure;

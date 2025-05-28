@@ -10,9 +10,11 @@ load('EDA_Results/returnsTable.mat', 'returnsTable');
 load('EDA_Results/paramResults.mat', 'paramResults');
 load('EDA_Results/innovationsStruct.mat', 'innovationsStruct');
 load('EDA_Results/copulaStruct.mat', 'copulaStruct');
-products = returnsTable.Properties.VariableNames;
+products = fieldnames(returnsTable);
 nProducts = numel(products);
-nObs = height(returnsTable)+1;
+% Get number of observations from the first product
+firstProduct = products{1};
+nObs = length(returnsTable.(firstProduct)) + 1;
 nPaths = config.simulation.nPaths;
 
 % Initialize output
@@ -41,8 +43,8 @@ for p = 1:nPaths
     % For each product, initialize price and regime
     for i = 1:nProducts
         pname = products{i};
-        % Initial price: last observed historical price
-        simPaths.(pname)(1,p) = returnsTable{end,pname} + randn*1e-6;
+        % Initial price: use a baseline value since we're working with returns
+        simPaths.(pname)(1,p) = 100 + randn*1e-6; % Start from baseline price
         % Initial regime: sample from stationary distribution
         markovModel = paramResults.(pname).markovModel;
         regimeSeq = zeros(nObs-1,1);
@@ -63,7 +65,18 @@ for p = 1:nPaths
         end
         regimeIdx = mode(currRegimes);
         copula = copulaStruct(regimeIdx);
-        u = copularnd(copula.type, copula.params, 1);
+        % Generate copula sample
+        if strcmpi(copula.type, 't')
+            if isfield(copula, 'df')
+                % Ensure df is a positive integer for mvtrnd
+                df_int = round(max(1, copula.df));
+                u = copularnd('t', copula.params, 1, df_int);
+            else
+                error('Copula struct for type "t" is missing the required field "df" (degrees of freedom).');
+            end
+        else
+            u = copularnd(copula.type, copula.params, 1);
+        end
         innovs = zeros(1,nProducts);
         for i = 1:nProducts
             pname = products{i};
@@ -82,19 +95,29 @@ for p = 1:nPaths
             prevReturns = diff(simPaths.(pname)(max(1,t-10):t,p));
             if isempty(prevReturns), prevReturns = 0; end
             try
-                [~,V] = infer(garchModel, prevReturns);
-                condVol = sqrt(V(end));
+                % Try using the custom_infer function if available
+                if exist('custom_infer', 'file')
+                    [~,V] = custom_infer(garchModel, prevReturns);
+                    condVol = sqrt(V(end));
+                else
+                    % Fallback: use standardized residual approach
+                    condVol = std(prevReturns, 'omitnan');
+                    if isnan(condVol) || condVol==0, condVol = 1; end
+                end
             catch
                 condVol = std(prevReturns, 'omitnan');
                 if isnan(condVol) || condVol==0, condVol = 1; end
             end
             ret = condVol * innovs(i);
             % 1. Capping returns
-            capRet = 3 * std(returnsTable.(pname), 'omitnan');
-            if abs(ret) > capRet
-                ret = sign(ret) * capRet;
-                pathDiagnostics.(pname).cappedReturns(t,p) = 1;
-                cappedCount(i) = cappedCount(i) + 1;
+            returnsData = returnsTable.(pname);
+            if ~isempty(returnsData) && ~all(isnan(returnsData))
+                capRet = 3 * std(returnsData, 'omitnan');
+                if abs(ret) > capRet
+                    ret = sign(ret) * capRet;
+                    pathDiagnostics.(pname).cappedReturns(t,p) = 1;
+                    cappedCount(i) = cappedCount(i) + 1;
+                end
             end
             % 2. Add jump if needed, with capping
             jumpModel = paramResults.(pname).jumpModels(currReg);
@@ -111,21 +134,34 @@ for p = 1:nPaths
                 pathDiagnostics.(pname).jumps(t,p) = jump;
             end
             % 3. Mean reversion (auto-calibrated)
-            anchor = mean(returnsTable.(pname), 'omitnan');
-            anchorWeight = min(0.5, 0.1 + 0.4 * (abs(simPaths.(pname)(t,p) - anchor) / (5*std(returnsTable.(pname), 'omitnan'))));
-            ret = ret + anchorWeight * (anchor - simPaths.(pname)(t,p));
+            returnsData = returnsTable.(pname);
+            if ~isempty(returnsData) && ~all(isnan(returnsData))
+                anchor = mean(returnsData, 'omitnan');
+                stdev = std(returnsData, 'omitnan');
+                if stdev > 0
+                    anchorWeight = min(0.5, 0.1 + 0.4 * (abs(simPaths.(pname)(t,p) - anchor) / (5*stdev)));
+                    ret = ret + anchorWeight * (anchor - simPaths.(pname)(t,p));
+                end
+            end
             % 4. Update price and cap price
             simPaths.(pname)(t+1,p) = simPaths.(pname)(t,p) + ret;
-            capPrice = anchor + 5 * std(returnsTable.(pname), 'omitnan');
-            minPrice = anchor - 5 * std(returnsTable.(pname), 'omitnan');
-            if simPaths.(pname)(t+1,p) > capPrice
-                simPaths.(pname)(t+1,p) = capPrice;
-                pathDiagnostics.(pname).cappedPrices(t+1,p) = 1;
-                cappedCount(i) = cappedCount(i) + 1;
-            elseif simPaths.(pname)(t+1,p) < minPrice
-                simPaths.(pname)(t+1,p) = minPrice;
-                pathDiagnostics.(pname).cappedPrices(t+1,p) = 1;
-                cappedCount(i) = cappedCount(i) + 1;
+            returnsData = returnsTable.(pname);
+            if ~isempty(returnsData) && ~all(isnan(returnsData))
+                anchor = mean(returnsData, 'omitnan');
+                stdev = std(returnsData, 'omitnan');
+                if stdev > 0
+                    capPrice = anchor + 5 * stdev;
+                    minPrice = anchor - 5 * stdev;
+                    if simPaths.(pname)(t+1,p) > capPrice
+                        simPaths.(pname)(t+1,p) = capPrice;
+                        pathDiagnostics.(pname).cappedPrices(t+1,p) = 1;
+                        cappedCount(i) = cappedCount(i) + 1;
+                    elseif simPaths.(pname)(t+1,p) < minPrice
+                        simPaths.(pname)(t+1,p) = minPrice;
+                        pathDiagnostics.(pname).cappedPrices(t+1,p) = 1;
+                        cappedCount(i) = cappedCount(i) + 1;
+                    end
+                end
             end
             % 5. Log diagnostics
             pathDiagnostics.(pname).returns(t,p) = ret;
@@ -157,4 +193,4 @@ for i = 1:nProducts
 end
 
 fprintf('Sprint 5 complete: Robust simulation with capping, mean reversion, and diagnostics saved to Simulation_Results.\n');
-end 
+end

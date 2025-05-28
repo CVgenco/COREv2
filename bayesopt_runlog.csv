@@ -1,0 +1,2 @@
+anchorWeight,capReturn,capJump,volAmp,blockSize,jumpFreq,minJumpSize,maxVolRatio,capDiff,capAdj,mean_diag,std_diag,kurtosis_diag,skewness_diag,jumpFreq_diag,jumpSize_diag,acfsq_diag,regimeDuration_diag,transitionMatrix_diag,numCappedEvents_diag,numCappedPricePathEvents_diag,error,status
+0.130471,2766.72,1569.96,1.6129,100,0.191355,363.879,82.2487,3826.52,2382.13,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,1e+06,fail

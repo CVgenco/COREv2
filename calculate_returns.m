@@ -33,7 +33,11 @@ for i = 1:numel(vars)
     data = cleanedTable.(v);
     if isnumeric(data)
         if strcmpi(retType, 'log')
-            ret = diff(log(data));
+            % Handle zero and negative prices for log returns
+            % Replace zero and negative prices with small positive value
+            data_safe = data;
+            data_safe(data_safe <= 0) = 0.01; % Replace with 1 cent
+            ret = diff(log(data_safe));
         else
             ret = diff(data);
         end

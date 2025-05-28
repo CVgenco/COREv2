@@ -1,0 +1,24 @@
+Diagnostics Summary Report
+==========================
+
+Product: nodalPrices
+  Mean: hist 40.2658 | sim 41.1795
+  Std:  hist 90.4278 | sim 51.8798
+  Skew: hist 14.0493 | sim 0.1223
+  Kurt: hist 245.0441 | sim 2.1845
+  Volatility clustering (ACF lag 1): hist 0.3422 | sim 0.9988
+
+Product: regup
+  Mean: hist 15.4090 | sim 14.1644
+  Std:  hist 54.2085 | sim 11.5658
+  Skew: hist 10.3307 | sim 0.0220
+  Kurt: hist 132.8439 | sim 1.7549
+  Volatility clustering (ACF lag 1): hist 0.1834 | sim 0.9990
+
+Product: hubPrices
+  Mean: hist 42.1473 | sim -11.4591
+  Std:  hist 93.6661 | sim 43.3461
+  Skew: hist 13.2781 | sim 0.0905
+  Kurt: hist 219.6075 | sim 1.5320
+  Volatility clustering (ACF lag 1): hist 0.3190 | sim 0.9991
+

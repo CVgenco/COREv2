@@ -4,11 +4,20 @@
 function runSimulationAndScenarioGeneration(configFile, outputDir)
 % runSimulationAndScenarioGeneration Generate realistic, correlated Monte Carlo simulation paths using a config file and output directory.
 %   configFile: path to the user config .m file
-%   outputDir: output directory for simulation results
+%   outputDir: (optional) output directory for simulation results. If not provided, uses config.outputDirs.simulation
 
 run(configFile); % Loads config into workspace
 if ~exist('config', 'var')
     error('Config variable not found after running %s. Check your config file.', configFile);
+end
+
+% Use default output directory from config if not provided
+if nargin < 2 || isempty(outputDir)
+    if isfield(config, 'outputDirs') && isfield(config.outputDirs, 'simulation')
+        outputDir = config.outputDirs.simulation;
+    else
+        outputDir = 'Simulation_Results'; % Fallback default
+    end
 end
 % Robustly load alignedTable and info if not present
 if ~exist('alignedTable', 'var') || ~exist('info', 'var')
@@ -48,11 +57,68 @@ end
 fprintf('No general mean scaling applied. Only product-specific forecast scaling will be used.\n');
 
 % === Always load regimeInfo if available ===
-if exist('EDA_Results/regime_info.mat', 'file')
-    load('EDA_Results/regime_info.mat', 'regimeInfo');
-    fprintf('Loaded regimeInfo from EDA_Results/regime_info.mat\n');
+if exist('EDA_Results/regimeInfo.mat', 'file')
+    load('EDA_Results/regimeInfo.mat', 'regimeInfo');
+    fprintf('Loaded regimeInfo from EDA_Results/regimeInfo.mat\n');
+    
+    % Validate regime data for each product
+    for i = 1:numel(productNames)
+        pname = productNames{i};
+        if ~isfield(regimeInfo, pname) || ~isfield(regimeInfo.(pname), 'regimeStates') || all(isnan(regimeInfo.(pname).regimeStates))
+            fprintf('WARNING: No valid regime data for %s, creating default regime sequence\n', pname);
+            % Create default single-regime state for products without regime data
+            nObs = height(alignedTable);
+            regimeInfo.(pname).regimeStates = ones(nObs, 1);
+            regimeInfo.(pname).nRegimes = 1;
+            regimeInfo.(pname).averageVolatilityPerRegime = [std(alignedTable.(pname), 'omitnan')];
+        end
+    end
 else
-    warning('regime_info.mat not found in EDA_Results. Regime volatility modulation may be skipped.');
+    warning('regimeInfo.mat not found in EDA_Results. Creating default single-regime data for all products.');
+    regimeInfo = struct();
+    for i = 1:numel(productNames)
+        pname = productNames{i};
+        nObs = height(alignedTable);
+        regimeInfo.(pname).regimeStates = ones(nObs, 1);
+        regimeInfo.(pname).nRegimes = 1;
+        regimeInfo.(pname).averageVolatilityPerRegime = [std(alignedTable.(pname), 'omitnan')];
+        fprintf('Created default regime data for %s\n', pname);
+    end
+end
+
+% === Enhanced Data Preprocessing (Integrated) ===
+if isfield(config, 'dataPreprocessing') && config.dataPreprocessing.enabled
+    fprintf('Running enhanced data preprocessing with robust outlier detection...\n');
+    
+    % Apply enhanced data preprocessing if not already done
+    if ~exist('EDA_Results/enhanced_preprocessing_complete.mat', 'file')
+        % Extract product names from alignedTable
+        if istable(alignedTable) || istimetable(alignedTable)
+            productNames = alignedTable.Properties.VariableNames;
+            % Remove timestamp columns
+            productNames = productNames(~contains(lower(productNames), {'time', 'date'}));
+        else
+            productNames = fieldnames(alignedTable);
+        end
+        
+        % Run enhanced data preprocessing on alignedTable
+        [alignedTable, preprocessingReport] = enhancedDataPreprocessing(alignedTable, productNames, config);
+        
+        % Save the enhanced preprocessing results
+        save('EDA_Results/enhanced_preprocessing_complete.mat', 'preprocessingReport');
+        save('EDA_Results/alignedTable_enhanced.mat', 'alignedTable');
+        
+        fprintf('Enhanced data preprocessing completed and saved.\n');
+        fprintf('Outliers detected and handled: %d total across all products\n', preprocessingReport.totalOutliersDetected);
+        fprintf('Volatility explosion prevention: %s\n', preprocessingReport.volatilityExplosionPrevention);
+    else
+        % Load previously processed data
+        load('EDA_Results/enhanced_preprocessing_complete.mat', 'preprocessingReport');
+        load('EDA_Results/alignedTable_enhanced.mat', 'alignedTable');
+        fprintf('Loaded previously enhanced data preprocessing results.\n');
+    end
+else
+    fprintf('Enhanced data preprocessing disabled, using standard processing.\n');
 end
 
 % === Monte Carlo path generation ===
@@ -381,8 +447,12 @@ if isfield(config, 'regimeVolatilityModulation') && config.regimeVolatilityModul
                 else
                     volRatio = targetVol / currentSimVol;
                 end
-                % Cap volRatio to prevent extreme values
-                maxVolRatio = 5; % More conservative cap
+                % Cap volRatio to prevent extreme values - use config value if available
+                if isfield(config.regimeVolatilityModulation, 'maxVolRatio') && ~isnan(config.regimeVolatilityModulation.maxVolRatio) && config.regimeVolatilityModulation.maxVolRatio > 0
+                    maxVolRatio = config.regimeVolatilityModulation.maxVolRatio;
+                else
+                    maxVolRatio = 5; % Conservative fallback cap
+                end
                 if volRatio > maxVolRatio
                     volRatio = maxVolRatio;
                 elseif volRatio < (1/maxVolRatio) && volRatio ~= 0
@@ -581,4 +651,4 @@ for i = 1:numel(productNames)
 end
 
 fprintf('Simulation complete. Results saved to %s\n', outputDir);
-end 
+end

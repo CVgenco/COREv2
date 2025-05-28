@@ -1,0 +1,32 @@
+Sprint 6 Validation Summary (28-May-2025 01:00:19)
+Diagnostics run:
+  - Return distribution
+  - Volatility clustering (ACF)
+  - Jump frequency/size
+  - Regime durations/transitions
+  - Cross-asset correlations
+
+Flagged deviations:
+  Simulated std for nodalPrices deviates >50% from historical.
+  Simulated jump freq for nodalPrices deviates >50% from historical.
+  Simulated std for hubPrices deviates >50% from historical.
+  Simulated jump freq for hubPrices deviates >50% from historical.
+  Simulated std for nodalGeneration deviates >50% from historical.
+  Simulated jump freq for nodalGeneration deviates >50% from historical.
+  Simulated std for regup deviates >50% from historical.
+  Simulated jump freq for regup deviates >50% from historical.
+  Simulated std for regdown deviates >50% from historical.
+  Simulated jump freq for regdown deviates >50% from historical.
+  Simulated std for nonspin deviates >50% from historical.
+  Simulated jump freq for nonspin deviates >50% from historical.
+  Simulated std for hourlyHubForecasts deviates >50% from historical.
+  Simulated jump freq for hourlyHubForecasts deviates >50% from historical.
+  Simulated std for hourlyNodalForecasts deviates >50% from historical.
+  Simulated jump freq for hourlyNodalForecasts deviates >50% from historical.
+
+Next steps:
+  - Review flagged diagnostics.
+  - If needed, adjust simulation parameters and rerun.
+  - Consider automated tuning loop for persistent deviations.
+
+See plots and details in the validation output directory.

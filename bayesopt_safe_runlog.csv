@@ -1,0 +1,5 @@
+iteration,blockSize,df,jumpThreshold,regimeAmpFactor,errorScore,acfError,kurtosisError,status,timestamp
+1,146,7,2.405313,1.747902,1000000.000000,NaN,NaN,sim_fail,2025-05-28 03:32:17
+2,151,8,0.472819,0.590413,1000000.000000,NaN,NaN,sim_fail,2025-05-28 03:34:54
+3,130,15,2.856360,1.190224,1000000.000000,NaN,NaN,sim_fail,2025-05-28 03:37:39
+4,46,7,1.242103,1.046675,1000000.000000,NaN,NaN,sim_fail,2025-05-28 03:40:25

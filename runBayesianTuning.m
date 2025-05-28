@@ -1,20 +1,17 @@
 % runBayesianTuning.m
-% Enhanced Bayesian optimization for simulation parameter tuning
-% Includes more parameters, diagnostics, and parallelization
+% Enhanced Bayesian optimization for robust simulation parameter tuning
+% Integrated with enhanced data preprocessing and safety validation
+% 
+% This version uses the new robust parameter set and enhanced preprocessing pipeline
 
 function runBayesianTuning()
-    % Define parameter search space (add more as needed)
+    % Define parameter search space for robust Bayesian optimization
+    % These parameters match our enhanced robust system
     optimVars = [ ...
-        optimizableVariable('anchorWeight',[0,0.3]), ...
-        optimizableVariable('capReturn',[500,3000]), ...
-        optimizableVariable('capJump',[500,3000]), ...
-        optimizableVariable('volAmp',[0.5,2]), ...
         optimizableVariable('blockSize',[12,168],'Type','integer'), ...
-        optimizableVariable('jumpFreq',[0,0.2]), ...
-        optimizableVariable('minJumpSize',[0,500]), ...
-        optimizableVariable('maxVolRatio',[2,10]), ...
-        optimizableVariable('capDiff',[1000,5000]), ...
-        optimizableVariable('capAdj',[2000,10000]) ...
+        optimizableVariable('df',[3,15],'Type','integer'), ...
+        optimizableVariable('jumpThreshold',[0.01,0.15]), ...
+        optimizableVariable('regimeAmpFactor',[0.5,1.5]) ...
     ];
 
     % Fixed list of all diagnostic fields for logging
@@ -22,82 +19,34 @@ function runBayesianTuning()
     assignin('base','ALL_DIAG_FIELDS',ALL_DIAG_FIELDS); % Make available to workers
 
     logFile = 'bayesopt_runlog.csv';
+    
+    fprintf('Starting robust Bayesian optimization with enhanced preprocessing...\n');
+    fprintf('Parameter ranges:\n');
+    fprintf('  blockSize: [12, 168]\n');
+    fprintf('  df (degrees of freedom): [3, 15]\n');
+    fprintf('  jumpThreshold: [0.01, 0.15]\n');
+    fprintf('  regimeAmpFactor: [0.5, 1.5]\n');
 
-    % Run Bayesian optimization with parallelization
-    results = bayesopt(@(params) simObjective(params, logFile), optimVars, ...
-        'MaxObjectiveEvaluations', 40, ...
-        'IsObjectiveDeterministic', true, ...
+    % Run Bayesian optimization using the enhanced objective function
+    results = bayesopt(@bayesoptSimObjective, optimVars, ...
+        'MaxObjectiveEvaluations', 10, ...
+        'IsObjectiveDeterministic', false, ...  % Set to false for more robust exploration
         'AcquisitionFunctionName', 'expected-improvement-plus', ...
-        'UseParallel', true);
+        'UseParallel', false, ...
+        'Verbose', 1, ...
+        'PlotFcn', []);
 
     % Save best parameters
     bestParams = results.XAtMinObjective;
     save('bayesopt_results.mat','results','bestParams');
+    fprintf('Robust Bayesian optimization completed!\n');
     fprintf('Best parameters found:\n');
     disp(bestParams);
-end
-
-function err = simObjective(params, logFile)
-    % Load and update config
-    configFile = 'userConfig.m';
-    outputDir = 'BayesOpt_Results';
-    if ~exist(outputDir,'dir'), mkdir(outputDir); end
-    run(configFile); % loads config
-    % Set parameters
-    config.simulation.randomSeed = 42; % for reproducibility
-    config.blockBootstrapping.blockSize = params.blockSize;
-    config.blockBootstrapping.enabled = true;
-    config.regimeVolatilityModulation.amplificationFactor = params.volAmp;
-    config.regimeVolatilityModulation.enabled = true;
-    config.regimeVolatilityModulation.maxVolRatio = params.maxVolRatio;
-    config.anchorWeight = params.anchorWeight;
-    config.capReturn = params.capReturn;
-    config.capJump = params.capJump;
-    config.capDiff = params.capDiff;
-    config.capAdj = params.capAdj;
-    config.jumpModeling.frequency = params.jumpFreq;
-    config.jumpModeling.minJumpSize = params.minJumpSize;
-    % Save updated config to temp file
-    tempConfigFile = fullfile(outputDir,'tempConfig.m');
-    saveUserConfig(config, tempConfigFile);
-    % Run simulation
-    try
-        runSimulationAndScenarioGeneration(tempConfigFile, outputDir);
-    catch ME
-        warning('Simulation failed: %s', ME.message);
-        err = 1e6; % Penalize failed runs
-        logDiagnostics(params, struct(), 1e6, logFile, 'fail');
-        return;
-    end
-    % Load diagnostics (assume runOutputAndValidation.m saves diagnostics)
-    try
-        runOutputAndValidation(outputDir);
-        load(fullfile(outputDir,'diagnostics.mat'),'simDiagnostics','histDiagnostics');
-    catch
-        warning('Diagnostics failed.');
-        err = 1e6;
-        logDiagnostics(params, struct(), 1e6, logFile, 'fail');
-        return;
-    end
-    % Compute error (sum of squared differences in diagnostics)
-    err = 0;
-    fields = {'mean','std','kurtosis','skewness','jumpFreq','jumpSize','acfsq','regimeDuration','transitionMatrix'};
-    for f = 1:numel(fields)
-        field = fields{f};
-        if isfield(simDiagnostics,field) && isfield(histDiagnostics,field)
-            err = err + sum((simDiagnostics.(field) - histDiagnostics.(field)).^2,'all','omitnan');
-        end
-    end
-    % Add penalty for excessive capping
-    if isfield(simDiagnostics,'numCappedEvents')
-        err = err + 0.1*simDiagnostics.numCappedEvents;
-    end
-    % Add penalty for capped price path events
-    if isfield(simDiagnostics,'numCappedPricePathEvents')
-        err = err + 0.1*simDiagnostics.numCappedPricePathEvents;
-    end
-    % Log diagnostics and parameters
-    logDiagnostics(params, simDiagnostics, err, logFile, 'ok');
+    
+    % Apply best parameters to userConfig.m
+    fprintf('Updating userConfig.m with best parameters...\n');
+    updateUserConfig(bestParams.blockSize, bestParams.df, bestParams.jumpThreshold, bestParams.regimeAmpFactor);
+    fprintf('userConfig.m updated successfully.\n');
 end
 
 function logDiagnostics(params, simDiagnostics, err, logFile, status)
@@ -107,11 +56,65 @@ function logDiagnostics(params, simDiagnostics, err, logFile, status)
     else
         ALL_DIAG_FIELDS = {'mean','std','kurtosis','skewness','jumpFreq','jumpSize','acfsq','regimeDuration','transitionMatrix','numCappedEvents','numCappedPricePathEvents'};
     end
-    paramFields = fieldnames(params);
+    
+    % Convert params to struct if it's a table (from Bayesian optimization)
+    if istable(params)
+        paramFields = params.Properties.VariableNames;
+        paramStruct = struct();
+        for i = 1:length(paramFields)
+            paramStruct.(paramFields{i}) = params{1, paramFields{i}};
+        end
+        params = paramStruct;
+        % paramFields already set above
+    else
+        paramFields = fieldnames(params);
+    end
     row = cell2table(cell(1, numel(paramFields)+numel(ALL_DIAG_FIELDS)+2));
-    row.Properties.VariableNames = [paramFields; ALL_DIAG_FIELDS'; {'error','status'}];
+    % Ensure all arrays are row vectors for concatenation
+    paramFieldsRow = paramFields(:)';
+    diagFieldsRow = ALL_DIAG_FIELDS(:)';
+    statusFields = {'error','status'};
+    
+    % MATLAB table reserved names
+    reservedNames = {'Properties', 'Row', 'Variables'};
+    
+    % Handle duplicate field names and reserved names
+    for i = 1:length(diagFieldsRow)
+        % Check for duplicates with parameter fields
+        if any(strcmp(diagFieldsRow{i}, paramFieldsRow))
+            diagFieldsRow{i} = [diagFieldsRow{i} '_diag'];
+        end
+        % Check for reserved names
+        if any(strcmpi(diagFieldsRow{i}, reservedNames))
+            diagFieldsRow{i} = [diagFieldsRow{i} '_field'];
+        end
+    end
+    
+    % Also check parameter fields for reserved names
+    for i = 1:length(paramFieldsRow)
+        if any(strcmpi(paramFieldsRow{i}, reservedNames))
+            paramFieldsRow{i} = [paramFieldsRow{i} '_param'];
+        end
+    end
+    
+    % Check status fields
+    for i = 1:length(statusFields)
+        if any(strcmpi(statusFields{i}, reservedNames))
+            statusFields{i} = [statusFields{i} '_status'];
+        end
+    end
+    
+    row.Properties.VariableNames = [paramFieldsRow, diagFieldsRow, statusFields];
     for i = 1:numel(paramFields)
-        row{1,i} = params.(paramFields{i});
+        val = params.(paramFields{i});
+        % Ensure the value is a scalar for table assignment
+        if isnumeric(val) && numel(val) == 1
+            row{1,i} = val;
+        elseif isnumeric(val) && numel(val) > 1
+            row{1,i} = val(1); % Take first element if it's an array
+        else
+            row{1,i} = double(val); % Convert to double if possible
+        end
     end
     for i = 1:numel(ALL_DIAG_FIELDS)
         field = ALL_DIAG_FIELDS{i};

@@ -96,18 +96,6 @@ for i = 2:numel(resampledTables)
     alignedTable = synchronize(alignedTable, resampledTables{i}, 'intersection', 'mean');
 end
 
-% === Robustly fill missing values for all products ===
-fillProducts = setdiff(alignedTable.Properties.VariableNames, alignedTable.Properties.DimensionNames{1});
-for i = 1:numel(fillProducts)
-    pname = fillProducts{i};
-    % Linear interpolation for internal NaNs
-    alignedTable.(pname) = fillmissing(alignedTable.(pname), 'linear');
-    % Forward fill for leading NaNs
-    alignedTable.(pname) = fillmissing(alignedTable.(pname), 'previous');
-    % Backward fill for trailing NaNs
-    alignedTable.(pname) = fillmissing(alignedTable.(pname), 'next');
-end
-
 % Clean up variable names (add product name as prefix if needed)
 % (Optional: can be extended for more robust naming)
 
@@ -118,4 +106,4 @@ info.resolutionSource = resSource;
 info.nativeResolutions = nativeRes;
 info.productNames = productNames;
 
-end 
+end

@@ -70,13 +70,13 @@ for i = 1:numel(vars)
             try
                 gm = fitgmdist(validData, nRegimes, 'RegularizationValue', 1e-2);
                 idx = cluster(gm, validData);
-                regimeLabels = NaN(size(data));
-                regimeLabels(~isnan(data)) = idx;
+                regimeLabelsTemp = NaN(size(data));
+                regimeLabelsTemp(~isnan(data)) = idx;
                 info.method = 'GMM';
                 info.status = 'success';
             catch ME
                 warning('GMM fitting failed: %s', ME.message);
-                regimeLabels = NaN(size(data));
+                regimeLabelsTemp = NaN(size(data));
                 info = struct('method', 'GMM', 'status', 'failed', 'error', ME.message);
             end
 
@@ -108,7 +108,7 @@ for i = 1:numel(vars)
             validIdx = ~isnan(data) & isfinite(data) & isreal(data);
             if sum(validIdx) < 10
                 warning('Not enough valid data for regime detection in %s. Skipping.', v);
-                regimeLabels = NaN(size(data));
+                regimeLabelsTemp = NaN(size(data));
                 info.method = 'rollingvol';
                 info.status = 'skipped';
                 info.reason = 'not enough valid data';
@@ -159,14 +159,18 @@ for i = 1:numel(vars)
                     info.autoThresh = {'median', thresh};
                 end
             end
-            regimeLabels = double(vol > thresh) + 1;
+            regimeLabelsTemp = double(vol > thresh) + 1;
             info.volThreshold = thresh;
             dataPlot = real(data);
         otherwise
             error('Unknown regime detection method');
     end
+    
+    % Store the regime labels for this variable in the table
+    regimeLabels.(v) = regimeLabelsTemp;
+    
     % After regimeLabels assignment, print NaN summary
-    nanRegimeIdx = find(isnan(regimeLabels));
+    nanRegimeIdx = find(isnan(regimeLabelsTemp));
     if ~isempty(nanRegimeIdx)
         fprintf('After regime detection, %s regimeLabels has %d NaNs at indices: ', v, numel(nanRegimeIdx));
         if numel(nanRegimeIdx) <= 10
@@ -179,16 +183,16 @@ for i = 1:numel(vars)
     end
     % Plot regime assignment
     figure; plot(timeIndex, dataPlot, 'k-'); hold on;
-    scatter(timeIndex, dataPlot, 20, regimeLabels, 'filled');
+    scatter(timeIndex, dataPlot, 20, regimeLabelsTemp, 'filled');
     title(['Regime Assignment: ' v]); xlabel('Time'); ylabel('Return');
     saveas(gcf, ['EDA_Results/regime_' v '.png']); close;
     % Volatility by regime
-    for r = 1:max(regimeLabels)
-        regVol = std(data(regimeLabels==r), 'omitnan');
+    for r = 1:max(regimeLabelsTemp)
+        regVol = std(data(regimeLabelsTemp==r), 'omitnan');
         fprintf('Regime %d for %s: volatility=%.4g\n', r, v, regVol);
     end
     % Regime durations
-    durs = diff(find([1; diff(regimeLabels)~=0; 1]));
+    durs = diff(find([1; diff(regimeLabelsTemp)~=0; 1]));
     info.regimeDurations = durs;
     fprintf('Regime durations for %s: mean=%.2f, min=%d, max=%d\n', v, mean(durs), min(durs), max(durs));
 end
